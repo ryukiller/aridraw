@@ -46,6 +46,10 @@
     "lint": "next lint",
     "preview": "opennextjs-cloudflare && wrangler dev",
     "start": "next start",
-    "types": "wrangler types --env-interface CloudflareEnv env.d.ts"
+    "types": "wrangler types --env-interface CloudflareEnv env.d.ts",
+    "build:worker": "opennextjs-cloudflare",
+    "dev:worker": "wrangler dev --port 8771",
+    "preview:worker": "npm run build:worker && npm run dev:worker",
+    "deploy:worker": "npm run build:worker && wrangler deploy"
   }
 }
