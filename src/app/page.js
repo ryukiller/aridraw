@@ -76,7 +76,6 @@ export default function Home() {
   // Helper: Draw an image on a canvas using "contain" sizing.
   const drawContainedImage = (canvas, img) => {
     const ctx = canvas.getContext('2d');
-    // Use the canvas style size (in CSS pixels)
     const canvasWidth = parseInt(canvas.style.width) || window.innerWidth;
     const canvasHeight = parseInt(canvas.style.height) || window.innerHeight;
     const imgRatio = img.width / img.height;
@@ -96,7 +95,7 @@ export default function Home() {
     ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
   };
 
-  // Adjust canvas sizes and re-draw background image (with "contain" mode).
+  // Adjust canvas sizes and redraw images.
   const setCanvasSizes = useCallback(() => {
     const dpr = window.devicePixelRatio || 1;
     if (bgCanvasRef.current) {
@@ -135,26 +134,25 @@ export default function Home() {
     return () => window.removeEventListener('resize', setCanvasSizes);
   }, [setCanvasSizes]);
 
-  // Handlers for drawing.
-  const handleMouseDown = (e) => {
+  // Extract touch coordinates.
+  const getTouchPos = (e) => {
     const canvas = drawingCanvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const touch = e.touches[0];
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  };
+
+  // Mouse and Touch handlers.
+  const startDrawing = (x, y) => {
     setIsDrawing(true);
     setLastPoint({ x, y });
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDrawing) return;
+  const drawLine = (x, y) => {
     const canvas = drawingCanvasRef.current;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
     if (brushType === 'spray') {
-      const density = 30; // dots per move.
+      const density = 30;
       const radius = pencilSize * 2;
       ctx.fillStyle = color;
       for (let i = 0; i < density; i++) {
@@ -164,29 +162,63 @@ export default function Home() {
       }
       setLastPoint({ x, y });
       return;
-    } else {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = pencilSize;
-      ctx.lineCap = 'round';
-      if (brushType === 'marker') {
-        ctx.globalAlpha = 0.5;
-      }
-      ctx.beginPath();
-      ctx.moveTo(lastPoint.x, lastPoint.y);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      if (brushType === 'marker') {
-        ctx.globalAlpha = 1;
-      }
-      setLastPoint({ x, y });
     }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = pencilSize;
+    ctx.lineCap = 'round';
+    if (brushType === 'marker') ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(lastPoint.x, lastPoint.y);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    if (brushType === 'marker') ctx.globalAlpha = 1;
+    setLastPoint({ x, y });
   };
 
-  const handleMouseUp = () => {
+  const endDrawing = () => {
     setIsDrawing(false);
   };
 
-  // Clear only the drawing canvas.
+  // Mouse events.
+  const handleMouseDown = (e) => {
+    const rect = drawingCanvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    startDrawing(x, y);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDrawing) return;
+    const rect = drawingCanvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    drawLine(x, y);
+  };
+
+  const handleMouseUp = () => {
+    endDrawing();
+  };
+
+  // Touch events.
+  const handleTouchStart = (e) => {
+    e.preventDefault(); // Prevent scrolling
+    const { x, y } = getTouchPos(e);
+    startDrawing(x, y);
+  };
+
+  const handleTouchMove = (e) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const { x, y } = getTouchPos(e);
+    drawLine(x, y);
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    endDrawing();
+  };
+
+  // Clear drawing canvas.
   const clearDrawing = () => {
     if (!drawingCanvasRef.current) return;
     const canvas = drawingCanvasRef.current;
@@ -194,7 +226,7 @@ export default function Home() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // When a background image is selected, clear the drawing.
+  // Background selection clears drawing.
   const handleImageSelect = (imageUrl) => {
     const img = new window.Image();
     img.src = imageUrl;
@@ -214,10 +246,21 @@ export default function Home() {
     };
   };
 
+  // Save drawing to history.
   // Save current drawing and background to history.
   const saveDrawing = () => {
     if (!drawingCanvasRef.current) return;
-    const dataUrl = drawingCanvasRef.current.toDataURL();
+    const canvas = drawingCanvasRef.current;
+    // Create a temporary canvas that matches the CSS dimensions.
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = window.innerWidth;
+    tempCanvas.height = window.innerHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    // Draw the current drawing canvas onto the temporary canvas.
+    // Note: This uses the CSS dimensions so that strokes remain consistent.
+    tempCtx.drawImage(canvas, 0, 0, window.innerWidth, window.innerHeight);
+    const dataUrl = tempCanvas.toDataURL();
+
     const newHistoryItem = {
       drawing: dataUrl,
       background: selectedBackground,
@@ -226,7 +269,8 @@ export default function Home() {
     updateHistory(newHistory);
   };
 
-  // Load a history item: first its background, then the drawing.
+
+  // Load drawing from history.
   const loadDrawingFromHistory = (historyItem) => {
     if (historyItem.background) {
       const img = new window.Image();
@@ -248,22 +292,21 @@ export default function Home() {
     img.src = historyItem.drawing;
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, window.innerWidth, window.innerHeight);
     };
   };
 
-  // Delete a single history item.
+  // Delete history items.
   const deleteHistoryItem = (index) => {
     const newHistory = drawingHistory.filter((_, i) => i !== index);
     updateHistory(newHistory);
   };
 
-  // Delete all history.
   const deleteAllHistory = () => {
     updateHistory([]);
   };
 
-  // Generate composite thumbnail for a history item.
+  // Generate composite thumbnail for history items.
   const generateThumbnail = (item, thumbnailWidth = 100) => {
     return new Promise((resolve, reject) => {
       const bgImg = new Image();
@@ -302,7 +345,7 @@ export default function Home() {
     });
   };
 
-  // Regenerate composite thumbnails whenever history changes.
+  // Regenerate thumbnails on history change.
   useEffect(() => {
     async function generateAllThumbnails() {
       try {
@@ -322,14 +365,14 @@ export default function Home() {
     }
   }, [drawingHistory]);
 
-  // Brush type options.
+  // Brush options.
   const brushOptions = [
     { type: 'pencil', icon: <PenTool size={16} /> },
     { type: 'marker', icon: <Edit3 size={16} /> },
     { type: 'spray', icon: <Brush size={16} /> },
   ];
 
-  // Expanded preset color options.
+  // Preset colors.
   const colorOptions = [
     'black',
     'white',
@@ -346,7 +389,7 @@ export default function Home() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      {/* Toolbar Toggle Button */}
+      {/* Toolbar Toggle */}
       <button
         onClick={() => setToolbarVisible(!toolbarVisible)}
         className="absolute top-4 right-4 z-30 bg-gray-700 text-white p-2 rounded"
@@ -420,7 +463,7 @@ export default function Home() {
                     Delete All
                   </button>
                 </DrawerHeader>
-                <div className="p-4 grid grid-cols-3 gap-2">
+                <div className="p-4 grid sm:grid-cols-3 lg:grid-cols-12 gap-2">
                   {drawingHistory.length === 0 && (
                     <p className="col-span-3 text-center text-sm text-gray-600">
                       No drawings saved yet.
@@ -468,7 +511,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Brush Type Options */}
+          {/* Brush & Size */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">Brush:</span>
             {brushOptions.map((option) => (
@@ -483,7 +526,6 @@ export default function Home() {
                 <span className="capitalize">{option.type}</span>
               </button>
             ))}
-            {/* Size Slider */}
             <div className="flex items-center gap-2">
               <label htmlFor="pencilSize" className="font-medium">
                 Size:
@@ -517,7 +559,6 @@ export default function Home() {
                 title={col}
               />
             ))}
-            {/* Custom Color Picker */}
             <div className="flex items-center gap-1">
               <label htmlFor="customColor" className="font-medium">
                 Custom:
@@ -537,7 +578,7 @@ export default function Home() {
       {/* Background Canvas */}
       <canvas ref={bgCanvasRef} className="absolute top-0 left-0 z-0" />
 
-      {/* Drawing Canvas */}
+      {/* Drawing Canvas with Mouse & Touch Handlers */}
       <canvas
         ref={drawingCanvasRef}
         className="absolute top-0 left-0 z-10"
@@ -545,6 +586,10 @@ export default function Home() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       />
     </div>
   );
