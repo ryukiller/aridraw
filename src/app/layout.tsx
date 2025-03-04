@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Your imagination at your pocket - AriDraw",
-  description: "Unleash your inner artist with Creative Canvas—a modern, responsive digital painting and drawing app. Experiment with multiple brush types, vibrant color palettes, and custom backgrounds. Save, revisit, and share your creative history with ease.",
+  description: "Unleash your inner artist with Creative Canvas a modern, responsive digital painting and drawing app. Experiment with multiple brush types, vibrant color palettes, and custom backgrounds. Save, revisit, and share your creative history with ease.",
 };
 
 export default function RootLayout({
