@@ -364,6 +364,18 @@ export default function Home() {
     }
   }, [drawingHistory]);
 
+  useEffect(() => {
+    const preventGesture = (e) => e.preventDefault();
+    document.addEventListener('gesturestart', preventGesture);
+    document.addEventListener('gesturechange', preventGesture);
+    document.addEventListener('gestureend', preventGesture);
+    return () => {
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('gestureend', preventGesture);
+    };
+  }, []);
+
   // Brush options.
   const brushOptions = [
     { type: 'pencil', icon: <PenTool size={16} /> },
@@ -597,7 +609,7 @@ export default function Home() {
       {/* Zoom Container wraps the canvases so the transform applies */}
       <div
         className="absolute top-0 left-0 z-0"
-        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', touchAction: 'none', }}
       >
         {/* Background Canvas */}
         <canvas ref={bgCanvasRef} />
