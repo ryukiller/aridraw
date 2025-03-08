@@ -1,5 +1,4 @@
 'use client'
-
 import {
   Brush,
   Droplet,
@@ -11,6 +10,8 @@ import {
   PenTool,
   Save,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   Drawer,
@@ -43,6 +44,7 @@ export default function Home() {
   const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 });
   const [loadedImage, setLoadedImage] = useState(null);
   const [selectedBackground, setSelectedBackground] = useState(null);
+  const [zoom, setZoom] = useState(1);
 
   // Brush type state: 'pencil', 'marker', or 'spray'
   const [brushType, setBrushType] = useState('pencil');
@@ -76,6 +78,7 @@ export default function Home() {
   // Helper: Draw an image on a canvas using "contain" sizing.
   const drawContainedImage = (canvas, img) => {
     const ctx = canvas.getContext('2d');
+    // Use the canvas style size (in CSS pixels)
     const canvasWidth = parseInt(canvas.style.width) || window.innerWidth;
     const canvasHeight = parseInt(canvas.style.height) || window.innerHeight;
     const imgRatio = img.width / img.height;
@@ -95,7 +98,7 @@ export default function Home() {
     ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
   };
 
-  // Adjust canvas sizes and redraw images.
+  // Adjust canvas sizes and re-draw images.
   const setCanvasSizes = useCallback(() => {
     const dpr = window.devicePixelRatio || 1;
     if (bgCanvasRef.current) {
@@ -134,15 +137,19 @@ export default function Home() {
     return () => window.removeEventListener('resize', setCanvasSizes);
   }, [setCanvasSizes]);
 
-  // Extract touch coordinates.
+  // Extract touch coordinates adjusted by zoom.
   const getTouchPos = (e) => {
+    if (e.touches.length > 1) return null; // Ignore multi-touch
     const canvas = drawingCanvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const touch = e.touches[0];
-    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    return {
+      x: (touch.clientX - rect.left) / zoom,
+      y: (touch.clientY - rect.top) / zoom
+    };
   };
 
-  // Mouse and Touch handlers.
+  // Drawing functions.
   const startDrawing = (x, y) => {
     setIsDrawing(true);
     setLastPoint({ x, y });
@@ -179,19 +186,21 @@ export default function Home() {
     setIsDrawing(false);
   };
 
-  // Mouse events.
+  // Mouse event handlers adjusted for zoom.
   const handleMouseDown = (e) => {
-    const rect = drawingCanvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const canvas = drawingCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
     startDrawing(x, y);
   };
 
   const handleMouseMove = (e) => {
     if (!isDrawing) return;
-    const rect = drawingCanvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const canvas = drawingCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
     drawLine(x, y);
   };
 
@@ -199,18 +208,19 @@ export default function Home() {
     endDrawing();
   };
 
-  // Touch events.
+  // Touch event handlers.
   const handleTouchStart = (e) => {
-    e.preventDefault(); // Prevent scrolling
-    const { x, y } = getTouchPos(e);
-    startDrawing(x, y);
+    e.preventDefault();
+    if (e.touches.length > 1) return;
+    const pos = getTouchPos(e);
+    if (pos) startDrawing(pos.x, pos.y);
   };
 
   const handleTouchMove = (e) => {
     e.preventDefault();
-    if (!isDrawing) return;
-    const { x, y } = getTouchPos(e);
-    drawLine(x, y);
+    if (!isDrawing || e.touches.length > 1) return;
+    const pos = getTouchPos(e);
+    if (pos) drawLine(pos.x, pos.y);
   };
 
   const handleTouchEnd = (e) => {
@@ -218,7 +228,7 @@ export default function Home() {
     endDrawing();
   };
 
-  // Clear drawing canvas.
+  // Clear the drawing canvas.
   const clearDrawing = () => {
     if (!drawingCanvasRef.current) return;
     const canvas = drawingCanvasRef.current;
@@ -226,7 +236,7 @@ export default function Home() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // Background selection clears drawing.
+  // When a background is selected, clear the drawing.
   const handleImageSelect = (imageUrl) => {
     const img = new window.Image();
     img.src = imageUrl;
@@ -247,20 +257,9 @@ export default function Home() {
   };
 
   // Save drawing to history.
-  // Save current drawing and background to history.
   const saveDrawing = () => {
     if (!drawingCanvasRef.current) return;
-    const canvas = drawingCanvasRef.current;
-    // Create a temporary canvas that matches the CSS dimensions.
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = window.innerWidth;
-    tempCanvas.height = window.innerHeight;
-    const tempCtx = tempCanvas.getContext('2d');
-    // Draw the current drawing canvas onto the temporary canvas.
-    // Note: This uses the CSS dimensions so that strokes remain consistent.
-    tempCtx.drawImage(canvas, 0, 0, window.innerWidth, window.innerHeight);
-    const dataUrl = tempCanvas.toDataURL();
-
+    const dataUrl = drawingCanvasRef.current.toDataURL();
     const newHistoryItem = {
       drawing: dataUrl,
       background: selectedBackground,
@@ -268,7 +267,6 @@ export default function Home() {
     const newHistory = [...drawingHistory, newHistoryItem];
     updateHistory(newHistory);
   };
-
 
   // Load drawing from history.
   const loadDrawingFromHistory = (historyItem) => {
@@ -292,11 +290,11 @@ export default function Home() {
     img.src = historyItem.drawing;
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, window.innerWidth, window.innerHeight);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
   };
 
-  // Delete history items.
+  // Delete history functions.
   const deleteHistoryItem = (index) => {
     const newHistory = drawingHistory.filter((_, i) => i !== index);
     updateHistory(newHistory);
@@ -345,7 +343,7 @@ export default function Home() {
     });
   };
 
-  // Regenerate thumbnails on history change.
+  // Regenerate thumbnails when history changes.
   useEffect(() => {
     async function generateAllThumbnails() {
       try {
@@ -372,7 +370,7 @@ export default function Home() {
     { type: 'spray', icon: <Brush size={16} /> },
   ];
 
-  // Preset colors.
+  // Preset color options.
   const colorOptions = [
     'black',
     'white',
@@ -463,7 +461,7 @@ export default function Home() {
                     Delete All
                   </button>
                 </DrawerHeader>
-                <div className="p-4 grid sm:grid-cols-3 lg:grid-cols-12 gap-2">
+                <div className="p-4 grid grid-cols-3 gap-2">
                   {drawingHistory.length === 0 && (
                     <p className="col-span-3 text-center text-sm text-gray-600">
                       No drawings saved yet.
@@ -511,7 +509,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Brush & Size */}
+          {/* Brush & Zoom Controls */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">Brush:</span>
             {brushOptions.map((option) => (
@@ -572,25 +570,50 @@ export default function Home() {
               />
             </div>
           </div>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setZoom((prev) => Math.min(prev + 0.1, 3))}
+              className="flex items-center gap-1 px-2 py-1 rounded border transition bg-white"
+              title="Zoom In"
+            >
+              <ZoomIn size={16} />
+              <span>{(zoom * 100).toFixed(0)}%</span>
+            </button>
+            <button
+              onClick={() => setZoom((prev) => Math.max(prev - 0.1, 1))}
+              className="flex items-center gap-1 px-2 py-1 rounded border transition bg-white"
+              title="Zoom Out"
+            >
+              <ZoomOut size={16} />
+              <span>{(zoom * 100).toFixed(0)}%</span>
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Background Canvas */}
-      <canvas ref={bgCanvasRef} className="absolute top-0 left-0 z-0" />
-
-      {/* Drawing Canvas with Mouse & Touch Handlers */}
-      <canvas
-        ref={drawingCanvasRef}
-        className="absolute top-0 left-0 z-10"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-      />
+      {/* Zoom Container wraps the canvases so the transform applies */}
+      <div
+        className="absolute top-0 left-0 z-0"
+        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+      >
+        {/* Background Canvas */}
+        <canvas ref={bgCanvasRef} />
+        {/* Drawing Canvas */}
+        <canvas
+          ref={drawingCanvasRef}
+          className="absolute top-0 left-0 z-10"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+        />
+      </div>
     </div>
   );
 }
